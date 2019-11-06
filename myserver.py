@@ -10,7 +10,9 @@ class Server:
         self.addresses = {}  # Dictionary for client addresses
         self.names = {}
         self.games = []
-        self.word = "talhababa"
+        self.turnChecker = []
+        self.turnHolder = 0
+        self.word = "trivial"
         self.words = ['muscle', 'cat', 'board', 'body', 'love','telephone','computer','communication']
         self.current = "______________________________________"
         self.incorrectGuesses = []
@@ -41,7 +43,8 @@ class Server:
             if name not in self.names:  # name is valid
                 client.send(bytes(f'Welcome {name}, you can send messages now. For exit, plase type \'---quit---\'', "utf-8"))
                 client.send(bytes("First word have " + str(len(self.word)) + " letter. Start guessing!", "utf-8"))
-                self.broadcast(f'Prepare yourselves, {name} has joined!')  # Announcing new client to everyone
+                self.broadcast(f'{name} has joined the game!')  # Announcing new client to everyone
+                self.turnChecker.append(name)
                 self.clients[client] = name  # Saving client name
                 self.names[name] = True
                 break
@@ -50,46 +53,60 @@ class Server:
 
         while True:  # Infinite loope for waiting messages of the client
             message = client.recv(self.BUFFER_SIZE).decode("utf-8")  # Wating a message
-
-            if message != self.quit_message:  # Checking whether the client wants to leave the chat
-                if len(message) > 1:
-                    if message == self.word:
-                        self.broadcast(name + " completed the game. The guess is: " + message)
-                        self.show_last_stuation()
-                        self.game_over(name)
-                    else:
-                        self.incorrectGuesses.append(message)
-                        self.broadcast(name + " made the wrong guess. The guess is: " + message) 
-                        self.print_incorrect_guesses()   
-                        self.show_last_stuation()     
+            message = message.lower()
+            
+            if name == self.turnChecker[self.turnHolder]:
+                if self.turnHolder < (len(self.turnChecker) - 1):
+                    self.turnHolder = self.turnHolder + 1
                 else:
-                    if message in self.word:
-                        for i in range(len(self.word)):
-                            if message == self.word[i]:
-                                self.current = self.current[0:i] + message + self.current[(i+1):]  
-                        
-                        if self.current[:len(self.word)] == self.word:
-                            self.broadcast(name + " completed the game. The guess is: " + message)        
-                            self.game_over(name)   
+                    self.turnHolder = 0  
+
+                if message != self.quit_message:  # Checking whether the client wants to leave the chat
+                    if len(message) > 1:
+                        if message == self.word:
+                            self.broadcast(name + " completed the game. The guess is: " + message)
+                            self.show_last_stuation()
+                            self.game_over(name)
                         else:
-                            self.broadcast(name + " made  correct guess. The guess is: " + message)   
-                            self.show_last_stuation()      
+                            self.incorrectGuesses.append(message)
+                            self.broadcast(name + " made the wrong guess. The guess is: " + message) 
+                            self.print_incorrect_guesses()   
+                            self.show_last_stuation()     
                     else:
-                        self.incorrectGuesses.append(message)
-                        self.broadcast(name + " made the wrong guess. The guess is: " + message)    
-                        self.print_incorrect_guesses() 
-                        self.show_last_stuation()
-                
-                if len(self.incorrectGuesses) == 7:
-                    self.game_over("no-winner","7 incorrect guess made in total.")
-                          
+                        if message in self.word:
+                            for i in range(len(self.word)):
+                                if message == self.word[i]:
+                                    self.current = self.current[0:i] + message + self.current[(i+1):]  
+                            
+                            if self.current[:len(self.word)] == self.word:
+                                self.broadcast(name + " completed the game. The guess is: " + message)        
+                                self.game_over(name)   
+                            else:
+                                self.broadcast(name + " made  correct guess. The guess is: " + message)   
+                                self.show_last_stuation()      
+                        else:
+                            self.incorrectGuesses.append(message)
+                            self.broadcast(name + " made the wrong guess. The guess is: " + message)    
+                            self.print_incorrect_guesses() 
+                            self.show_last_stuation()
+                    
+                    if len(self.incorrectGuesses) == 7:
+                        self.game_over("no-winner","7 incorrect guess made in total.")
+
+                    self.print_turn()     
+                              
+                else:
+                    client.send(bytes("You are out of the chat room now :(", "utf-8"))
+                    client.close()
+                    del self.names[self.clients[client]]
+                    del self.clients[client]  # Deleting client from the room
+                    self.broadcast(f'{name} has left the chat.')
+                    break  # Terminating the loop   
             else:
-                client.send(bytes("You are out of the chat room now :(", "utf-8"))
-                client.close()
-                del self.names[self.clients[client]]
-                del self.clients[client]  # Deleting client from the room
-                self.broadcast(f'{name} has left the chat.')
-                break  # Terminating the loop
+                pass       
+
+    def print_turn(self):
+        self.broadcast(self.turnChecker[self.turnHolder] + " has turn! ")            
 
     def show_last_stuation(self):
         self.broadcast("Last stuation: " + self.current[:len(self.word)])  
@@ -108,7 +125,7 @@ class Server:
         self.broadcast("\n New word have " + str(len(self.word))  + " letter. Start guessing!" + ' \n' , False)
 
     def print_games(self):
-        self.broadcast("Game History:" , False)
+        self.broadcast(". Game History: " , False)
         for game in self.games:
            self.broadcast("Winner: \'" + game[0] + "\' , Word: \'" + game[1] + '\' \n' , False)      
 
@@ -132,14 +149,13 @@ if __name__ == "__main__":
     host = '127.0.0.1'
     port = 12312
 
-    try:
-        client_limit = int(input("Enter a limit for client number (max = 5): "))
-        if client_limit > 5:
-            client_limit = 5
-        elif client_limit < 0:
-            client_limit = 1
-    except:
+
+    client_limit = int(input("Enter a limit for client number (max = 5): "))
+    
+    if client_limit > 5:
         client_limit = 5
+    elif client_limit < 0:
+        client_limit = 1
 
     server = Server(host=host, port=port)
     server.serve(client_limit)
